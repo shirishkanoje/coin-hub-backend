@@ -12,7 +12,7 @@ public interface ForgotPasswordService {
 
     ForgotPasswordToken findById(String id);
 
-    ForgotPasswordToken findByUser(User user);   // ✅ FIXED
+    ForgotPasswordToken findByUser(User user);  
 
     void deleteTOken(ForgotPasswordToken token);
 }
