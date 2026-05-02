@@ -43,8 +43,7 @@ public class AppConfig {
         CorsConfiguration cfg = new CorsConfiguration();
         cfg.setAllowedOrigins(Arrays.asList("http://localhost:5173",
                                             "http://localhost:3000",
-                        "https://coin-hub-frontend-3czr.vercel.app",
-                      "https://coin-hub-frontend-3czr-ciz3sxbni-shirishs-projects-9f236482.vercel.app/"
+                                "https://coinhubcrypto.vercel.app"
 
                 ));
         cfg.setAllowedMethods(Collections.singletonList("*"));
