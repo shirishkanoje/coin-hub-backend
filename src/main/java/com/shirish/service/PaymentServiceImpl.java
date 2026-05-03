@@ -103,7 +103,7 @@ public class PaymentServiceImpl implements PaymentService {
 
             paymentLinkRequest.put("reminder_enable", true);
 
-            paymentLinkRequest.put("callback_url", "https://coinhubcrypto.vercel.app//wallet?order_id=" + orderId);
+            paymentLinkRequest.put("callback_url", "https://coinhubcrypto.vercel.app/wallet?order_id=" + orderId);
             paymentLinkRequest.put("callback_method", "get");
 
             PaymentLink payment = razorpay.paymentLink.create(paymentLinkRequest);
