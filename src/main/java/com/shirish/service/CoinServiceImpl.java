@@ -1,25 +1,18 @@
 package com.shirish.service;
 
-
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shirish.modal.Coin;
 import com.shirish.repository.CoinRepository;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestTemplate;
 
-
 import java.util.List;
 import java.util.Optional;
-
 
 @Service
 public class CoinServiceImpl implements CoinService {
@@ -30,185 +23,176 @@ public class CoinServiceImpl implements CoinService {
     @Autowired
     private CoinRepository coinRepository;
 
+    private final RestTemplate restTemplate = new RestTemplate();
+
+    // 🔥 CACHE VARIABLES
+    private String cachedTop50 = null;
+    private long top50Time = 0;
+
+    private String cachedTrending = null;
+    private long trendingTime = 0;
+
+    private String cachedChart = null;
+    private long chartTime = 0;
+
+    private String cachedDetails = null;
+    private long detailsTime = 0;
+
+    private static final long CACHE_DURATION = 60000; // 60 sec
+
+    // 🔥 COMMON METHOD FOR API CALL
+    private String callApi(String url) throws Exception {
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Accept", "application/json");
+            headers.set("User-Agent", "Mozilla/5.0");
+
+            HttpEntity<String> entity = new HttpEntity<>(headers);
+
+            ResponseEntity<String> response = restTemplate.exchange(
+                    url,
+                    HttpMethod.GET,
+                    entity,
+                    String.class
+            );
+
+            return response.getBody();
+
+        } catch (HttpClientErrorException e) {
+            if (e.getStatusCode().value() == 429) {
+                System.out.println("🔥 Rate limit hit: " + url);
+                return null; // handled in caller
+            }
+            throw new Exception(e.getMessage());
+        } catch (HttpServerErrorException e) {
+            throw new Exception(e.getMessage());
+        }
+    }
 
     @Override
     public List<Coin> getCoins(int page) throws Exception {
         String url = "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&per_page=10&page=" + page;
 
-        RestTemplate restTemplate = new RestTemplate();
+        String response = callApi(url);
+        if (response == null) return List.of();
 
-        try{
-            HttpHeaders headers = new HttpHeaders();
-
-            HttpEntity<String> entity = new HttpEntity<String>("parameters",headers);
-
-            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
-
-            List<Coin> coinList =objectMapper.readValue(response.getBody() ,
-                    new TypeReference<List<Coin>>() {});
-//            return List.of();
-            return coinList;
-        }
-        catch(HttpClientErrorException | HttpServerErrorException e){
-            throw new Exception(e.getMessage());
-        }
-
-
+        return objectMapper.readValue(response, new TypeReference<List<Coin>>() {});
     }
 
     @Override
     public String getMarketChart(String coinId, int days) throws Exception {
 
+        long now = System.currentTimeMillis();
+
+        if (cachedChart != null && (now - chartTime) < CACHE_DURATION) {
+            return cachedChart;
+        }
+
         String url = "https://api.coingecko.com/api/v3/coins/" + coinId + "/market_chart?vs_currency=usd&days=" + days;
 
-        RestTemplate restTemplate = new RestTemplate();
+        String response = callApi(url);
 
-            try{
-                HttpHeaders headers = new HttpHeaders();
+        if (response != null) {
+            cachedChart = response;
+            chartTime = now;
+            return response;
+        }
 
-                HttpEntity<String> entity = new HttpEntity<String>("parameters",headers);
-
-                ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
-
-               return response.getBody();
-
-            }
-            catch(HttpClientErrorException | HttpServerErrorException e){
-                throw new Exception(e.getMessage());
-            }
+        return cachedChart != null ? cachedChart : "{}";
     }
 
     @Override
     public String getCoinDetails(String coinId) throws Exception {
-        String url = "https://api.coingecko.com/api/v3/coins/"+coinId;
-        RestTemplate restTemplate = new RestTemplate();
 
-        try{
-            HttpHeaders headers = new HttpHeaders();
+        long now = System.currentTimeMillis();
 
-            HttpEntity<String> entity = new HttpEntity<String>("parameters",headers);
-
-            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
-
-            JsonNode jsonNode = objectMapper.readTree(response.getBody());
-
-            Coin coin = new Coin();
-
-            coin.setId(jsonNode.get("id").asText());
-            coin.setName(jsonNode.get("name").asText());
-            coin.setSymbol(jsonNode.get("symbol").asText());
-            coin.setImage(jsonNode.get("image").get("large").asText());
-
-            JsonNode marketData = jsonNode.get("market_data");
-
-            coin.setCurrentPrice(marketData.get("current_price").get("usd").asDouble());
-            coin.setMarketCap(marketData.get("market_cap").get("usd").asLong());
-            coin.setMarketCapRank(marketData.get("market_cap_rank").asInt());
-            coin.setTotalVolume(marketData.get("total_volume").get("usd").asLong());
-            coin.setHigh24h(marketData.get("high_24h").get("usd").asDouble());
-            coin.setLow24h(marketData.get("low_24h").get("usd").asDouble());
-            coin.setPriceChange24h(marketData.get("price_change_24h").asDouble());
-            coin.setPriceChangePercentage24h(marketData.get("price_change_percentage_24h").asDouble());
-
-
-            coin.setMarketCapChange24h(marketData.get("market_cap_change_24h").asLong());
-
-            coin.setMarketCapChangePercentage24h(marketData.get("market_cap_change_percentage_24h").asLong());
-
-            coin.setTotalSupply(marketData.get("total_supply").asLong());
-
-            if (marketData.has("market_cap_change_24h") && marketData.get("market_cap_change_24h").has("usd")) {
-                coin.setMarketCapChange24h(marketData.get("market_cap_change_24h").get("usd").asLong());
-            }
-
-            if (marketData.has("market_cap_change_percentage_24h") && marketData.get("market_cap_change_percentage_24h").has("usd")) {
-                coin.setMarketCapChangePercentage24h(marketData.get("market_cap_change_percentage_24h").get("usd").asLong());
-            }
-
-            if (marketData.has("total_supply") && !marketData.get("total_supply").isNull()) {
-                coin.setTotalSupply(marketData.get("total_supply").asLong());
-            } else {
-                coin.setTotalSupply(0L); // Optional: Set default value
-            }
-
-
-            coinRepository.save(coin);
-
-            return response.getBody();
-
+        if (cachedDetails != null && (now - detailsTime) < CACHE_DURATION) {
+            return cachedDetails;
         }
-        catch(HttpClientErrorException | HttpServerErrorException e){
-            System.out.println("error...."+e.getMessage());
-            throw new Exception(e.getMessage());
+
+        String url = "https://api.coingecko.com/api/v3/coins/" + coinId;
+
+        String response = callApi(url);
+
+        if (response != null) {
+            cachedDetails = response;
+            detailsTime = now;
+
+            // OPTIONAL: save minimal data
+            try {
+                var jsonNode = objectMapper.readTree(response);
+                Coin coin = new Coin();
+
+                coin.setId(jsonNode.get("id").asText());
+                coin.setName(jsonNode.get("name").asText());
+                coin.setSymbol(jsonNode.get("symbol").asText());
+                coin.setImage(jsonNode.get("image").get("large").asText());
+
+                coinRepository.save(coin);
+            } catch (Exception ignored) {}
+
+            return response;
         }
+
+        return cachedDetails != null ? cachedDetails : "{}";
     }
 
     @Override
     public Coin findById(String coinId) throws Exception {
         Optional<Coin> optionalCoin = coinRepository.findById(coinId);
-        if(optionalCoin.isEmpty()) throw new Exception("coin notfound");
+        if (optionalCoin.isEmpty()) throw new Exception("coin not found");
         return optionalCoin.get();
     }
 
     @Override
     public String searchCoin(String keyword) throws Exception {
-        String url = "https://api.coingecko.com/api/v3/search?query="+keyword;
-        RestTemplate restTemplate = new RestTemplate();
+        String url = "https://api.coingecko.com/api/v3/search?query=" + keyword;
 
-        try{
-            HttpHeaders headers = new HttpHeaders();
-
-            HttpEntity<String> entity = new HttpEntity<String>("parameters",headers);
-
-            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
-
-            return response.getBody();
-
-        }
-        catch(HttpClientErrorException | HttpServerErrorException e){
-            throw new Exception(e.getMessage());
-        }
+        String response = callApi(url);
+        return response != null ? response : "{}";
     }
 
     @Override
     public String getTop50CoinsByMarketCapRank() throws Exception {
+
+        long now = System.currentTimeMillis();
+
+        if (cachedTop50 != null && (now - top50Time) < CACHE_DURATION) {
+            return cachedTop50;
+        }
+
         String url = "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&per_page=50&page=1";
 
-        RestTemplate restTemplate = new RestTemplate();
+        String response = callApi(url);
 
-        try{
-            HttpHeaders headers = new HttpHeaders();
-
-            HttpEntity<String> entity = new HttpEntity<String>("parameters",headers);
-
-            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
-
-            return response.getBody();
-
+        if (response != null) {
+            cachedTop50 = response;
+            top50Time = now;
+            return response;
         }
-        catch(HttpClientErrorException | HttpServerErrorException e){
-            throw new Exception(e.getMessage());
-        }
+
+        return cachedTop50 != null ? cachedTop50 : "[]";
     }
 
     @Override
     public String getTreadingCoins() throws Exception {
+
+        long now = System.currentTimeMillis();
+
+        if (cachedTrending != null && (now - trendingTime) < CACHE_DURATION) {
+            return cachedTrending;
+        }
+
         String url = "https://api.coingecko.com/api/v3/search/trending";
 
-        RestTemplate restTemplate = new RestTemplate();
+        String response = callApi(url);
 
-        try{
-            HttpHeaders headers = new HttpHeaders();
-
-            HttpEntity<String> entity = new HttpEntity<String>("parameters",headers);
-
-            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
-
-            return response.getBody();
-
+        if (response != null) {
+            cachedTrending = response;
+            trendingTime = now;
+            return response;
         }
-        catch(HttpClientErrorException | HttpServerErrorException e){
-            throw new Exception(e.getMessage());
-        }
+
+        return cachedTrending != null ? cachedTrending : "{}";
     }
 }
