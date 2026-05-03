@@ -103,7 +103,7 @@ public class PaymentServiceImpl implements PaymentService {
 
             paymentLinkRequest.put("reminder_enable", true);
 
-            paymentLinkRequest.put("callback_url", "http://localhost:5173/wallet?order_id=" + orderId);
+            paymentLinkRequest.put("callback_url", "https://coinhubcrypto.vercel.app//wallet?order_id=" + orderId);
             paymentLinkRequest.put("callback_method", "get");
 
             PaymentLink payment = razorpay.paymentLink.create(paymentLinkRequest);
@@ -128,8 +128,8 @@ public class PaymentServiceImpl implements PaymentService {
         SessionCreateParams params = SessionCreateParams.builder()
                 .addPaymentMethodType(SessionCreateParams.PaymentMethodType.CARD)
                 .setMode(SessionCreateParams.Mode.PAYMENT)
-                .setSuccessUrl("http://localhost:5173/wallet?order_id=" + orderId)
-                .setCancelUrl("http://localhost:5173/payment/cancel")
+                .setSuccessUrl("https://coinhubcrypto.vercel.app/wallet?order_id=" + orderId)
+                .setCancelUrl("https://coinhubcrypto.vercel.app/payment/cancel")
                 .addLineItem(SessionCreateParams.LineItem.builder()
                         .setQuantity(1L)
                         .setPriceData(SessionCreateParams.LineItem.PriceData.builder()
