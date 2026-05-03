@@ -8,7 +8,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.List;
@@ -25,7 +24,7 @@ public class CoinServiceImpl implements CoinService {
 
     private final RestTemplate restTemplate = new RestTemplate();
 
-    // 🔥 CACHE VARIABLES
+    // 🔥 CACHE
     private String cachedTop50 = null;
     private long top50Time = 0;
 
@@ -40,33 +39,51 @@ public class CoinServiceImpl implements CoinService {
 
     private static final long CACHE_DURATION = 60000; // 60 sec
 
-    // 🔥 COMMON METHOD FOR API CALL
+    // 🔥 COMMON API CALL WITH RETRY
     private String callApi(String url) throws Exception {
-        try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.set("Accept", "application/json");
-            headers.set("User-Agent", "Mozilla/5.0");
 
-            HttpEntity<String> entity = new HttpEntity<>(headers);
+        int retries = 3;
 
-            ResponseEntity<String> response = restTemplate.exchange(
-                    url,
-                    HttpMethod.GET,
-                    entity,
-                    String.class
-            );
+        while (retries-- > 0) {
+            try {
+                HttpHeaders headers = new HttpHeaders();
+                headers.set("Accept", "application/json");
+                headers.set("User-Agent", "Mozilla/5.0");
 
-            return response.getBody();
+                HttpEntity<String> entity = new HttpEntity<>(headers);
 
-        } catch (HttpClientErrorException e) {
-            if (e.getStatusCode().value() == 429) {
-                System.out.println("🔥 Rate limit hit: " + url);
-                return null; // handled in caller
+                ResponseEntity<String> response = restTemplate.exchange(
+                        url,
+                        HttpMethod.GET,
+                        entity,
+                        String.class
+                );
+
+                return response.getBody();
+
+            } catch (HttpClientErrorException e) {
+
+                if (e.getStatusCode().value() == 429) {
+                    System.out.println("🔥 Rate limit hit, retrying...");
+                    Thread.sleep(1500); // wait before retry
+                } else {
+                    throw new Exception(e.getMessage());
+                }
             }
-            throw new Exception(e.getMessage());
-        } catch (HttpServerErrorException e) {
-            throw new Exception(e.getMessage());
         }
+
+        return null; // after retries failed
+    }
+
+    // 🔥 DEFAULT FALLBACK
+    private String getDefaultCoins() {
+        return """
+        [
+          {"id":"bitcoin","symbol":"btc","name":"Bitcoin","current_price":78000},
+          {"id":"ethereum","symbol":"eth","name":"Ethereum","current_price":2300},
+          {"id":"tether","symbol":"usdt","name":"Tether","current_price":1}
+        ]
+        """;
     }
 
     @Override
@@ -118,7 +135,6 @@ public class CoinServiceImpl implements CoinService {
             cachedDetails = response;
             detailsTime = now;
 
-            // OPTIONAL: save minimal data
             try {
                 var jsonNode = objectMapper.readTree(response);
                 Coin coin = new Coin();
@@ -171,7 +187,7 @@ public class CoinServiceImpl implements CoinService {
             return response;
         }
 
-        return cachedTop50 != null ? cachedTop50 : "[]";
+        return cachedTop50 != null ? cachedTop50 : getDefaultCoins();
     }
 
     @Override
